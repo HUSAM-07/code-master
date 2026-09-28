@@ -87,6 +87,7 @@ async function pollChannel(env: AppEnv, project: Project, channel: Channel) {
       }
       pageCursor = data.response_metadata?.next_cursor || "";
       if (!pageCursor) break;
+      // ponytail: fail without advancing the watermark; paginate across sweeps if larger backlogs become common.
       if (page === 99) throw new Error("Slack backlog exceeds 10,000 messages");
     }
     if (newest)

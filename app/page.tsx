@@ -403,7 +403,7 @@ export default function Home() {
           >
             New project
           </Button>
-          <Card className="hidden p-5 lg:block">
+          <Card className="p-5">
             <Label>YOUR PLAN</Label>
             <p className="mt-3 text-headline-medium text-text-primary">
               {user.plan === "pro" ? "Keep building" : "Build at your pace"}
