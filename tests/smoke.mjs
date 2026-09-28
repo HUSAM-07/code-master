@@ -190,8 +190,20 @@ try {
     body: JSON.stringify({ content: "CSRF" }),
   });
   assert.equal(response.status, 403, "Cross-origin mutations must be rejected");
+  const oversized = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode(JSON.stringify({ content: "x".repeat(65000) })));
+      controller.close();
+    },
+  });
+  response = await request(`/api/projects/${project}/context`, ownerSession, {
+    method: "POST",
+    body: oversized,
+    duplex: "half",
+  });
+  assert.equal(response.status, 413, "Chunked requests must respect the body limit");
   console.log(
-    "Smoke check passed: tenant isolation, vault, context, continuous cron, key onboarding, manual quota, WhatsApp signature, CSRF",
+    "Smoke check passed: tenant isolation, vault, context, continuous cron, key onboarding, manual quota, WhatsApp signature, CSRF, body limit",
   );
 } finally {
   await sql("DELETE FROM projects WHERE id=?", [project]);

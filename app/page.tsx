@@ -768,7 +768,7 @@ export default function Home() {
                     ) : (
                       <Empty
                         title="No runs yet"
-                        description="Add your AI key in Secrets, then start a run. Foundry will open an issue and draft PR."
+                        description="Your first run is queued when you create a project. Activity will appear here."
                       />
                     )}
                   </Card>
@@ -810,7 +810,7 @@ export default function Home() {
                               channel_ref: "",
                             });
                             await refreshDetail(selected);
-                          }, "Channel connected.");
+                          }, "Source added. Save its credentials in Secrets and finish the channel setup.");
                         }}
                       >
                         <Input
@@ -834,7 +834,7 @@ export default function Home() {
                           isRequired
                         />
                         <Button type="submit" disabled={busy}>
-                          Connect channel
+                          Add source
                         </Button>
                       </form>
                     </Card>
@@ -869,7 +869,7 @@ export default function Home() {
                     </Card>
                   </div>
                   <Card className="mt-6 p-6">
-                    <Label>CONNECTED CHANNELS</Label>
+                    <Label>CHANNEL SOURCES</Label>
                     <div className="mt-4">
                       {detail.channels.length ? (
                         detail.channels.map((item) => (

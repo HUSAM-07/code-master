@@ -9,8 +9,25 @@ import {
 export async function body<T>(request: Request): Promise<T> {
   if (Number(request.headers.get("content-length") || 0) > 64000)
     throw new Response("Request too large", { status: 413 });
+  const reader = request.body?.getReader();
+  const decoder = new TextDecoder();
+  let text = "";
+  let size = 0;
+  if (reader) {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > 64000) {
+        await reader.cancel();
+        throw new Response("Request too large", { status: 413 });
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+    text += decoder.decode();
+  }
   try {
-    return JSON.parse(await request.text()) as T;
+    return JSON.parse(text) as T;
   } catch {
     throw new Response("Invalid JSON", { status: 400 });
   }
