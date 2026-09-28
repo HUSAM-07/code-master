@@ -1,0 +1,41 @@
+{
+  "name": "code-master",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "npm@11.6.2",
+  "dependencies": {
+    "@remixicon/react": "^4.9.0",
+    "@vinext/cloudflare": "^1.0.0",
+    "react": "latest",
+    "react-aria-components": "^1.21.1",
+    "react-dom": "latest",
+    "react-server-dom-webpack": "^19.3.0",
+    "tailwind-merge": "^3.7.0",
+    "vinext": "^1.0.0"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.62.0",
+    "@tailwindcss/postcss": "latest",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "@vitejs/plugin-react": "^6.1.1",
+    "@vitejs/plugin-rsc": "^0.5.35",
+    "tailwindcss": "latest",
+    "typescript": "latest",
+    "vite": "^8.3.0",
+    "wrangler": "^4.143.0"
+  },
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "start": "vite preview",
+    "deploy": "vinext-cloudflare deploy",
+    "test:smoke": "node tests/smoke.mjs",
+    "types": "wrangler types",
+    "check": "wrangler types && tsc --noEmit",
+    "db:migrate:remote": "wrangler d1 migrations apply DB --remote"
+  }
+}

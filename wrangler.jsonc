@@ -1,0 +1,28 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "foundry-builder",
+  "main": "./worker/index.ts",
+  "compatibility_date": "2026-09-28",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": { "binding": "ASSETS", "not_found_handling": "none" },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "foundry-builder-db",
+      "database_id": "1f2ee80d-514f-470e-b942-7640dae15dc0",
+      "migrations_dir": "migrations",
+    },
+  ],
+  "queues": {
+    "producers": [{ "binding": "JOBS", "queue": "foundry-builder-jobs" }],
+    "consumers": [
+      {
+        "queue": "foundry-builder-jobs",
+        "max_batch_size": 1,
+        "max_retries": 3,
+      },
+    ],
+  },
+  "triggers": { "crons": ["*/15 * * * *"] },
+  "observability": { "enabled": true },
+}
