@@ -53,16 +53,31 @@ const runId = crypto.randomUUID();
 const pat = await encrypt(env, "test-github-pat");
 const provider = await encrypt(env, "openai");
 const aiKey = await encrypt(env, "test-ai-key");
+const slackToken = await encrypt(env, "test-slack-token");
+const telegramToken = await encrypt(env, "test-telegram-token");
 let aiCalls = 0;
 let issueCreates = 0;
 let pullCreates = 0;
+let slackCalls = 0;
 let sawDraft = false;
+let planPrompt = "";
 globalThis.fetch = async (input, init = {}) => {
   const url = new URL(input);
   const method = init.method || "GET";
   const reply = (value, status = 200) => Response.json(value, { status });
+  if (url.hostname === "slack.com") {
+    slackCalls++;
+    return reply({
+      ok: true,
+      messages: [{ ts: slackCalls === 1 ? "200.000" : "100.000", text: slackCalls === 1 ? "Slack asks for search" : "Slack asks for filters" }],
+      response_metadata: { next_cursor: slackCalls === 1 ? "page2" : "" },
+    });
+  }
+  if (url.hostname === "api.telegram.org")
+    return reply({ ok: true, result: [{ update_id: 7, message: { chat: { id: 123 }, text: "Telegram asks for export" } }] });
   if (url.hostname === "api.openai.com") {
     aiCalls++;
+    if (aiCalls === 1) planPrompt = JSON.parse(init.body).messages[1].content;
     const payload = aiCalls === 1
       ? { title: "Add greeting", description: "Update the greeting", files: ["src/app.ts"] }
       : { summary: "Updated greeting", files: [{ path: "src/app.ts", content: "export const greeting = 'Hello';" }] };
@@ -100,6 +115,10 @@ try {
   await sql("INSERT INTO projects(id,user_id,name,repo,brief) VALUES(?,?,?,?,?)", [id, userId, "Flow test", "octo/app", "A useful product"]);
   await sql("INSERT INTO secrets(project_id,name,iv,ciphertext) VALUES(?,?,?,?)", [id, "AI_PROVIDER", provider.iv, provider.ciphertext]);
   await sql("INSERT INTO secrets(project_id,name,iv,ciphertext) VALUES(?,?,?,?)", [id, "AI_API_KEY", aiKey.iv, aiKey.ciphertext]);
+  await sql("INSERT INTO secrets(project_id,name,iv,ciphertext) VALUES(?,?,?,?)", [id, "SLACK_BOT_TOKEN", slackToken.iv, slackToken.ciphertext]);
+  await sql("INSERT INTO secrets(project_id,name,iv,ciphertext) VALUES(?,?,?,?)", [id, "TELEGRAM_BOT_TOKEN", telegramToken.iv, telegramToken.ciphertext]);
+  await sql("INSERT INTO channels(id,project_id,kind,name,channel_ref) VALUES(?,?,'slack','Team','C123')", [`slack-${id}`, id]);
+  await sql("INSERT INTO channels(id,project_id,kind,name,channel_ref) VALUES(?,?,'telegram','Group','123')", [`telegram-${id}`, id]);
   await sql("INSERT INTO runs(id,project_id) VALUES(?,?)", [runId, id]);
   await runProject(env, runId, id);
   const [run] = await sql("SELECT status,issue_url,pr_url FROM runs WHERE id=?", [runId]);
@@ -112,9 +131,15 @@ try {
   assert.equal(issueCreates, 1);
   assert.equal(pullCreates, 1);
   assert.equal(sawDraft, true);
+  assert.equal(slackCalls, 2, "Slack pagination must read both pages");
+  assert.ok(planPrompt.includes("Slack asks for search"));
+  assert.ok(planPrompt.includes("Slack asks for filters"));
+  assert.ok(planPrompt.includes("Telegram asks for export"));
+  const cursors = await sql("SELECT kind,cursor FROM channels WHERE project_id=? ORDER BY kind", [id]);
+  assert.deepEqual(cursors, [{ kind: "slack", cursor: "200.000" }, { kind: "telegram", cursor: "8" }]);
   await runProject(env, runId, id);
   assert.equal(pullCreates, 1, "Completed runs must not create duplicate PRs");
-  console.log("Agent flow passed: brief → AI plan → GitHub issue → file commit → draft PR");
+  console.log("Agent flow passed: Slack/Telegram context → AI plan → GitHub issue → file commit → draft PR");
 } finally {
   globalThis.fetch = originalFetch;
   await sql("DELETE FROM projects WHERE id=?", [id]);
