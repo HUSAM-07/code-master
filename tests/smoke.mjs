@@ -122,6 +122,18 @@ try {
   assert.equal(response.status, 200);
   scheduledRuns = (await (await request(`/api/projects/${project}`, ownerSession)).json()).runs;
   assert.equal(scheduledRuns.length, 2, "Cron must respect the daily interval");
+  for (let i = 0; i < 2; i++) {
+    response = await request(`/api/projects/${project}/runs`, ownerSession, {
+      method: "POST",
+      body: "{}",
+    });
+    assert.equal(response.status, 202, "Scheduled work must not use manual quota");
+  }
+  response = await request(`/api/projects/${project}/runs`, ownerSession, {
+    method: "POST",
+    body: "{}",
+  });
+  assert.equal(response.status, 402, "The fourth manual run must be limited");
   response = await request(`/api/projects/${project}/context`, ownerSession, {
     method: "POST",
     headers: { Origin: "https://evil.example" },
@@ -129,7 +141,7 @@ try {
   });
   assert.equal(response.status, 403, "Cross-origin mutations must be rejected");
   console.log(
-    "Smoke check passed: tenant isolation, vault, context, queue, daily cron, CSRF",
+    "Smoke check passed: tenant isolation, vault, context, queue, daily cron, manual quota, CSRF",
   );
 } finally {
   await sql("DELETE FROM projects WHERE id=?", [project]);

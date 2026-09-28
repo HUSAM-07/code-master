@@ -7,7 +7,7 @@ export async function POST(request: Request, { params }: Params) {
   return owned(appEnv, request, id, async (_project, user) => {
     if (user.plan !== "pro") {
       const used = await appEnv.DB.prepare(
-        "SELECT COUNT(*) AS n FROM runs r JOIN projects p ON p.id=r.project_id WHERE p.user_id=? AND r.created_at >= date('now','start of month')",
+        "SELECT COUNT(*) AS n FROM runs r JOIN projects p ON p.id=r.project_id WHERE p.user_id=? AND r.kind='manual' AND r.created_at >= date('now','start of month')",
       )
         .bind(user.id)
         .first<{ n: number }>();

@@ -302,7 +302,7 @@ export async function enqueueDueProjects(env: AppEnv) {
     .all<Project>();
   for (const project of projects.results) {
     const runId = crypto.randomUUID();
-    await env.DB.prepare("INSERT INTO runs(id,project_id) VALUES(?,?)")
+    await env.DB.prepare("INSERT INTO runs(id,project_id,kind) VALUES(?,?,'scheduled')")
       .bind(runId, project.id)
       .run();
     await env.JOBS.send({ runId, projectId: project.id });
