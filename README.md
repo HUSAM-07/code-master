@@ -7,10 +7,10 @@ Live app: https://foundry-builder.morrow-invitations.workers.dev/
 ## What works
 
 - Sign in using a fine-grained GitHub PAT. It needs repository Contents, Issues, and Pull requests write access. The PAT is encrypted at rest with AES-GCM.
-- Create a project for a repository with an initial commit. Store an OpenAI or Anthropic key in its encrypted vault (`AI_PROVIDER` and `AI_API_KEY`; optional `AI_MODEL`).
+- Create a project for a repository with an initial commit, choose OpenAI or Anthropic, and enter its key. Foundry encrypts the key in the project vault and queues the first run immediately. Keys can be replaced in Secrets (`AI_PROVIDER`, `AI_API_KEY`; optional `AI_MODEL`).
 - Add context manually or connect Slack, Telegram, or WhatsApp. Slack and Telegram are polled; WhatsApp sends signed webhooks.
 - Start a run manually. Foundry plans one focused task, creates a GitHub issue, writes complete file changes on a `foundry/` branch, and opens a draft PR. It never merges.
-- Free accounts get one project, three manual runs per month, and one scheduled sweep per day. Pro accounts get faster scheduled runs and unlimited projects. Stripe Checkout and Customer Portal are ready when billing secrets and a recurring Price are configured.
+- Free accounts get one project, three manual runs per month, and one scheduled sweep per day. Sweeps keep proposing work from the brief and repository even when no new channel message arrives. Pro accounts get faster scheduled runs and unlimited projects. Stripe Checkout and Customer Portal are ready when billing secrets and a recurring Price are configured.
 
 Cloudflare Queues fills the job-stream role. Kafka is not needed for this workload.
 

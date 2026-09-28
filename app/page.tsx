@@ -119,6 +119,7 @@ function Empty({ title, description }: { title: string; description: string }) {
 
 export default function Home() {
   const [user, setUser] = useState<User | null>(null);
+  const [billingReady, setBillingReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
@@ -131,6 +132,8 @@ export default function Home() {
     name: "",
     repo: "",
     brief: "",
+    ai_provider: "openai",
+    ai_key: "",
   });
   const [note, setNote] = useState("");
   const [secret, setSecret] = useState({ name: "AI_API_KEY", value: "" });
@@ -165,9 +168,10 @@ export default function Home() {
     });
   }, []);
   useEffect(() => {
-    api<{ user: User | null }>("/api/session")
-      .then(async ({ user }) => {
+    api<{ user: User | null; billing_ready: boolean }>("/api/session")
+      .then(async ({ user, billing_ready }) => {
         setUser(user);
+        setBillingReady(billing_ready);
         if (user) await refreshProjects();
       })
       .catch((e) => setNotice(e.message))
@@ -414,8 +418,8 @@ export default function Home() {
                 : "One project, three manual runs each month, and daily sweeps. Upgrade for faster sweeps."}
             </p>
             {user.plan !== "pro" ? (
-              <Button className="mt-4 w-full" size="small" onClick={upgrade}>
-                Upgrade to Pro
+              <Button className="mt-4 w-full" size="small" onClick={upgrade} disabled={!billingReady}>
+                {billingReady ? "Upgrade to Pro" : "Pro billing setup pending"}
               </Button>
             ) : (
               <Button
@@ -454,8 +458,8 @@ export default function Home() {
                   Give your next product a home.
                 </h1>
                 <p className="mt-2 text-body-regular text-text-secondary">
-                  Start with a repository and a clear brief. Connect your AI key
-                  and channels next.
+                  Add a repository, product brief, and AI key. Foundry will start
+                  its first run right away.
                 </p>
               </div>
               <Card className="max-w-2xl p-6 sm:p-8">
@@ -470,8 +474,8 @@ export default function Home() {
                       await refreshProjects();
                       setSelected(result.id);
                       setCreating(false);
-                      setNewProject({ name: "", repo: "", brief: "" });
-                    }, "Project created. Add your AI key in Secrets.");
+                      setNewProject({ name: "", repo: "", brief: "", ai_provider: "openai", ai_key: "" });
+                    }, "Project created. First run queued.");
                   }}
                   className="flex flex-col gap-5"
                 >
@@ -498,6 +502,30 @@ export default function Home() {
                     }
                     placeholder="What are you building, who is it for, and what matters most?"
                     rows={6}
+                    isRequired
+                  />
+                  <div className="flex flex-col gap-2">
+                    <label htmlFor="ai-provider" className="text-body-medium text-text-primary">
+                      AI provider
+                    </label>
+                    <select
+                      id="ai-provider"
+                      value={newProject.ai_provider}
+                      onChange={(event) => setNewProject({ ...newProject, ai_provider: event.target.value })}
+                      className="min-h-12 rounded-xl border border-border-button-default bg-background-primary-default px-4 text-body-regular text-text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600"
+                    >
+                      <option value="openai">OpenAI</option>
+                      <option value="anthropic">Anthropic</option>
+                    </select>
+                  </div>
+                  <Input
+                    label="AI API key"
+                    type="password"
+                    autoComplete="off"
+                    value={newProject.ai_key}
+                    onChange={(ai_key) => setNewProject({ ...newProject, ai_key })}
+                    placeholder="Paste your provider key"
+                    hint="Encrypted in your project's vault. You can replace it later in Secrets."
                     isRequired
                   />
                   <div className="flex justify-end gap-2">

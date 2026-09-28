@@ -173,14 +173,6 @@ export async function runProject(
     )
       .bind(projectId, previous?.created_at || "1970-01-01")
       .all<{ content: string }>();
-    if (previous && !context.results.length) {
-      await env.DB.prepare(
-        "UPDATE runs SET status='idle',title='No new context',updated_at=CURRENT_TIMESTAMP WHERE id=?",
-      )
-        .bind(runId)
-        .run();
-      return;
-    }
     const user = await env.DB.prepare(
       "SELECT pat_iv,pat_ciphertext FROM users WHERE id=?",
     )
@@ -296,7 +288,7 @@ export async function runProject(
 export async function enqueueDueProjects(env: AppEnv) {
   const now = Math.floor(Date.now() / 1000);
   const projects = await env.DB.prepare(
-    "SELECT p.* FROM projects p JOIN users u ON u.id=p.user_id WHERE p.enabled=1 AND (p.last_swept_at IS NULL OR p.last_swept_at + (CASE WHEN u.plan='pro' THEN p.interval_minutes ELSE 1440 END) * 60 <= ?) LIMIT 100",
+    "SELECT p.* FROM projects p JOIN users u ON u.id=p.user_id WHERE p.enabled=1 AND EXISTS (SELECT 1 FROM secrets s WHERE s.project_id=p.id AND s.name='AI_PROVIDER') AND EXISTS (SELECT 1 FROM secrets s WHERE s.project_id=p.id AND s.name='AI_API_KEY') AND (p.last_swept_at IS NULL OR p.last_swept_at + (CASE WHEN u.plan='pro' THEN p.interval_minutes ELSE 1440 END) * 60 <= ?) LIMIT 100",
   )
     .bind(now)
     .all<Project>();

@@ -1,7 +1,7 @@
 import { appEnv } from "@/lib/env";
 import { github, repoPath, type Repo } from "@/lib/github";
 import { authed, body, field } from "@/lib/http";
-import { decrypt, type Project } from "@/lib/security";
+import { decrypt, encrypt, type Project } from "@/lib/security";
 
 export async function GET(request: Request) {
   return authed(appEnv, request, async (user) => {
@@ -20,10 +20,16 @@ export async function POST(request: Request) {
       repo: string;
       brief: string;
       interval_minutes?: number;
+      ai_provider?: string;
+      ai_key?: string;
     }>(request);
     const name = field(input.name, 100);
     const repo = field(input.repo, 200);
     const brief = field(input.brief, 10000);
+    const provider = input.ai_provider === undefined ? null : field(input.ai_provider, 20);
+    const aiKey = input.ai_key === undefined ? null : field(input.ai_key, 20000);
+    if (Boolean(provider) !== Boolean(aiKey) || (provider && !["openai", "anthropic"].includes(provider)))
+      throw new Response("Choose an AI provider and add its API key", { status: 400 });
     const interval = Number(input.interval_minutes || 60);
     if (![15, 30, 60, 360, 1440].includes(interval))
       throw new Response("Invalid schedule", { status: 400 });
@@ -43,11 +49,42 @@ export async function POST(request: Request) {
         status: 403,
       });
     const id = crypto.randomUUID();
-    await appEnv.DB.prepare(
-      "INSERT INTO projects(id,user_id,name,repo,brief,interval_minutes) VALUES(?,?,?,?,?,?)",
-    )
-      .bind(id, user.id, name, info.full_name, brief, interval)
-      .run();
-    return Response.json({ id }, { status: 201 });
+    const runId = aiKey ? crypto.randomUUID() : null;
+    const statements = [
+      appEnv.DB.prepare(
+        "INSERT INTO projects(id,user_id,name,repo,brief,interval_minutes,last_swept_at) VALUES(?,?,?,?,?,?,?)",
+      ).bind(
+        id,
+        user.id,
+        name,
+        info.full_name,
+        brief,
+        interval,
+        runId ? Math.floor(Date.now() / 1000) : null,
+      ),
+    ];
+    if (provider && aiKey && runId) {
+      for (const [secretName, value] of [["AI_PROVIDER", provider], ["AI_API_KEY", aiKey]]) {
+        const { iv, ciphertext } = await encrypt(appEnv, value);
+        statements.push(
+          appEnv.DB.prepare(
+            "INSERT INTO secrets(project_id,name,iv,ciphertext) VALUES(?,?,?,?)",
+          ).bind(id, secretName, iv, ciphertext),
+        );
+      }
+      statements.push(
+        appEnv.DB.prepare("INSERT INTO runs(id,project_id,kind) VALUES(?,?,'scheduled')").bind(runId, id),
+      );
+    }
+    await appEnv.DB.batch(statements);
+    if (runId) {
+      try {
+        await appEnv.JOBS.send({ runId, projectId: id });
+      } catch (error) {
+        await appEnv.DB.prepare("DELETE FROM projects WHERE id=?").bind(id).run();
+        throw error;
+      }
+    }
+    return Response.json({ id, runId }, { status: 201 });
   });
 }

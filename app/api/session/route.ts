@@ -14,6 +14,11 @@ export async function GET(request: Request) {
   try {
     const user = await getUser(appEnv, request);
     return Response.json({
+      billing_ready: Boolean(
+        appEnv.STRIPE_SECRET_KEY &&
+          appEnv.STRIPE_PRICE_ID &&
+          appEnv.STRIPE_WEBHOOK_SECRET,
+      ),
       user: user
         ? {
             id: user.id,

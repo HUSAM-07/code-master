@@ -25,7 +25,7 @@ export async function generate(config: AiConfig, system: string, user: string) {
       body: JSON.stringify(
         anthropic
           ? {
-              model: config.model || "claude-sonnet-4-5",
+              model: config.model || "claude-sonnet-5",
               max_tokens: 8192,
               system,
               messages: [{ role: "user", content: user }],

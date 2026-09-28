@@ -144,7 +144,8 @@ export async function createPullRequest(
       body: JSON.stringify({ base_tree: snapshot.treeSha, tree: blobs }),
     },
   );
-  if (newTree.sha === snapshot.treeSha) return null;
+  if (newTree.sha === snapshot.treeSha)
+    throw new Error("AI proposed no file changes");
   const commit = await github<{ sha: string }>(
     token,
     `${snapshot.base}/git/commits`,
@@ -165,8 +166,14 @@ export async function createPullRequest(
   } catch (error) {
     if (!(error instanceof Error) || !error.message.includes("(422)"))
       throw error;
-    // ponytail: retry reuses the first branch commit; add branch reconciliation if runs can edit after a partial failure.
+    // ponytail: reuse the existing branch after a partial retry; reconcile its commit if a run can change tasks mid-retry.
   }
+  const owner = repo.split("/")[0];
+  const existing = await github<{ html_url: string }[]>(
+    token,
+    `${snapshot.base}/pulls?head=${encodeURIComponent(`${owner}:${branch}`)}&state=all`,
+  );
+  if (existing[0]) return existing[0].html_url;
   const pr = await github<{ html_url: string }>(
     token,
     `${snapshot.base}/pulls`,

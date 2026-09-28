@@ -33,7 +33,7 @@
     "build": "vite build",
     "start": "vite preview",
     "deploy": "vinext-cloudflare deploy",
-    "test:smoke": "node tests/smoke.mjs",
+    "test:smoke": "node tests/providers.mjs && node tests/github.mjs && node tests/smoke.mjs",
     "types": "wrangler types",
     "check": "wrangler types && tsc --noEmit",
     "db:migrate:remote": "wrangler d1 migrations apply DB --remote"

@@ -21,6 +21,10 @@ export async function PUT(request: Request, { params }: Params) {
     )
       .bind(id, name, iv, ciphertext)
       .run();
+    if (name === "AI_PROVIDER" || name === "AI_API_KEY")
+      await appEnv.DB.prepare("UPDATE projects SET last_swept_at=NULL WHERE id=?")
+        .bind(id)
+        .run();
     return Response.json({ ok: true });
   });
 }

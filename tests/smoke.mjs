@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { randomBytes, createHash, webcrypto } from "node:crypto";
+import { randomBytes, createHash, createHmac, webcrypto } from "node:crypto";
 
 const base = "http://localhost:5173";
 const databases = await (
@@ -57,6 +57,15 @@ async function request(path, token, init) {
     },
   });
 }
+async function waitRun(id) {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    const response = await request(`/api/projects/${project}`, ownerSession);
+    const status = (await response.json()).runs.find((item) => item.id === id)?.status;
+    if (status !== "queued" && status !== "running") return status;
+  }
+  return "timed out";
+}
 try {
   for (const id of [owner, other])
     await sql(
@@ -76,7 +85,9 @@ try {
     [project, owner, "Local smoke", "example/repo", "A test project"],
   );
 
-  let response = await request(`/api/projects/${project}`, ownerSession);
+  let response = await request("/api/session", ownerSession);
+  assert.equal((await response.json()).billing_ready, false, "Checkout must report unconfigured billing");
+  response = await request(`/api/projects/${project}`, ownerSession);
   assert.equal(response.status, 200);
   response = await request(`/api/projects/${project}`, otherSession);
   assert.equal(response.status, 404, "Another user must not read this project");
@@ -106,34 +117,73 @@ try {
   });
   assert.equal(response.status, 202, "A manual run must enter the queue");
   const { id: runId } = await response.json();
-  let status = "queued";
-  for (let attempt = 0; attempt < 20 && status === "queued"; attempt++) {
-    await new Promise((resolve) => setTimeout(resolve, 250));
-    const run = await request(`/api/projects/${project}`, ownerSession);
-    status = (await run.json()).runs.find((item) => item.id === runId)?.status;
-  }
-  assert.equal(status, "failed", "The queue consumer must process the run");
+  assert.equal(await waitRun(runId), "failed", "The queue consumer must process the run");
+  await sql("UPDATE context_items SET created_at='2020-01-01' WHERE project_id=?", [project]);
+  await sql(
+    "INSERT INTO runs(id,project_id,kind,status,created_at) VALUES(?,?,'scheduled','completed','2025-01-01')",
+    [`completed-${suffix}`, project],
+  );
+  response = await request(`/api/projects/${project}/runs`, ownerSession, {
+    method: "POST",
+    body: "{}",
+  });
+  assert.equal(response.status, 202);
+  assert.equal(await waitRun((await response.json()).id), "failed", "Work must continue without new context");
   const scheduled = `${base}/cdn-cgi/local/scheduled?cron=${encodeURIComponent("*/15 * * * *")}`;
   response = await fetch(scheduled);
   assert.equal(response.status, 200, "The cron handler must run");
   let scheduledRuns = (await (await request(`/api/projects/${project}`, ownerSession)).json()).runs;
-  assert.equal(scheduledRuns.length, 2, "Free projects must get a daily sweep");
+  assert.equal(scheduledRuns.length, 3, "Projects without an AI key must not sweep");
+  await sql("UPDATE projects SET last_swept_at=? WHERE id=?", [Math.floor(Date.now() / 1000), project]);
+  response = await request(`/api/projects/${project}/secrets`, ownerSession, {
+    method: "PUT",
+    body: JSON.stringify({ name: "AI_API_KEY", value: "test-key" }),
+  });
+  assert.equal(response.status, 200);
+  const sweep = await sql("SELECT last_swept_at FROM projects WHERE id=?", [project]);
+  assert.equal(sweep.result[0].results.rows[0][0], null, "Adding an AI key must make the next sweep due");
   response = await fetch(scheduled);
   assert.equal(response.status, 200);
   scheduledRuns = (await (await request(`/api/projects/${project}`, ownerSession)).json()).runs;
-  assert.equal(scheduledRuns.length, 2, "Cron must respect the daily interval");
-  for (let i = 0; i < 2; i++) {
-    response = await request(`/api/projects/${project}/runs`, ownerSession, {
-      method: "POST",
-      body: "{}",
-    });
-    assert.equal(response.status, 202, "Scheduled work must not use manual quota");
-  }
+  assert.equal(scheduledRuns.length, 4, "Free projects must get a daily sweep");
+  response = await fetch(scheduled);
+  assert.equal(response.status, 200);
+  scheduledRuns = (await (await request(`/api/projects/${project}`, ownerSession)).json()).runs;
+  assert.equal(scheduledRuns.length, 4, "Cron must respect the daily interval");
+  response = await request(`/api/projects/${project}/runs`, ownerSession, {
+    method: "POST",
+    body: "{}",
+  });
+  assert.equal(response.status, 202, "Scheduled work must not use manual quota");
   response = await request(`/api/projects/${project}/runs`, ownerSession, {
     method: "POST",
     body: "{}",
   });
   assert.equal(response.status, 402, "The fourth manual run must be limited");
+  response = await request(`/api/projects/${project}/channels`, ownerSession, {
+    method: "POST",
+    body: JSON.stringify({ kind: "whatsapp", name: "Test chat", channel_ref: "12345" }),
+  });
+  assert.equal(response.status, 201);
+  const { id: channelId } = await response.json();
+  for (const [name, value] of [["WHATSAPP_APP_SECRET", "local-app-secret"], ["WHATSAPP_VERIFY_TOKEN", "local-verify"]]) {
+    response = await request(`/api/projects/${project}/secrets`, ownerSession, {
+      method: "PUT",
+      body: JSON.stringify({ name, value }),
+    });
+    assert.equal(response.status, 200);
+  }
+  const webhook = `${base}/api/webhooks/whatsapp/${channelId}`;
+  response = await fetch(`${webhook}?hub.mode=subscribe&hub.verify_token=local-verify&hub.challenge=verified`);
+  assert.equal(await response.text(), "verified", "Meta verification must work");
+  const message = JSON.stringify({ entry: [{ changes: [{ value: { metadata: { phone_number_id: "12345" }, messages: [{ id: `wa-${suffix}`, type: "text", text: { body: "Customer wants dark mode" } }] } }] }] });
+  const signature = createHmac("sha256", "local-app-secret").update(message).digest("hex");
+  response = await fetch(webhook, { method: "POST", headers: { "x-hub-signature-256": `sha256=${signature}` }, body: message });
+  assert.equal(response.status, 200, "Signed WhatsApp messages must be accepted");
+  response = await fetch(webhook, { method: "POST", headers: { "x-hub-signature-256": "sha256=" + "0".repeat(64) }, body: message });
+  assert.equal(response.status, 403, "Unsigned WhatsApp messages must be rejected");
+  response = await request(`/api/projects/${project}`, ownerSession);
+  assert.ok((await response.json()).context.some((item) => item.content === "Customer wants dark mode"));
   response = await request(`/api/projects/${project}/context`, ownerSession, {
     method: "POST",
     headers: { Origin: "https://evil.example" },
@@ -141,7 +191,7 @@ try {
   });
   assert.equal(response.status, 403, "Cross-origin mutations must be rejected");
   console.log(
-    "Smoke check passed: tenant isolation, vault, context, queue, daily cron, manual quota, CSRF",
+    "Smoke check passed: tenant isolation, vault, context, continuous cron, key onboarding, manual quota, WhatsApp signature, CSRF",
   );
 } finally {
   await sql("DELETE FROM projects WHERE id=?", [project]);
