@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createPullRequest } from "../lib/github.ts";
+import { createPullRequest, validateFiles } from "../lib/github.ts";
 
 const originalFetch = globalThis.fetch;
 let pullCreates = 0;
@@ -40,6 +40,8 @@ try {
   assert.equal(pullCreates, 1, "A retried run must reuse its existing PR");
   sameTree = true;
   await assert.rejects(createPullRequest(...args), /no file changes/);
+  assert.throws(() => validateFiles([{ path: "../secret", content: "x" }]));
+  assert.throws(() => validateFiles([{ path: "src/app.ts", content: "a" }, { path: "src/app.ts", content: "b" }]));
   console.log("GitHub check passed: draft PR creation, retry reuse, no-op rejection");
 } finally {
   globalThis.fetch = originalFetch;

@@ -5,7 +5,7 @@ export type Repo = {
 };
 type Tree = {
   sha: string;
-  tree: { path: string; type: string; size?: number }[];
+  tree: { path: string; type: string; mode: string; size?: number }[];
 };
 
 export async function github<T>(
@@ -57,14 +57,19 @@ export async function readRepository(token: string, repo: string) {
     token,
     `${base}/git/trees/${commit.tree.sha}?recursive=1`,
   );
+  const files = tree.tree.filter(
+    (file) =>
+      file.type === "blob" &&
+      ["100644", "100755"].includes(file.mode) &&
+      (file.size ?? 0) < 60000,
+  );
   return {
     base,
     info,
     headSha: ref.object.sha,
     treeSha: commit.tree.sha,
-    files: tree.tree
-      .filter((f) => f.type === "blob" && (f.size ?? 0) < 60000)
-      .map((f) => f.path),
+    files: files.map((file) => file.path),
+    modes: Object.fromEntries(files.map((file) => [file.path, file.mode])),
   };
 }
 
@@ -98,17 +103,21 @@ const blocked =
 export function validateFiles(files: { path: string; content: string }[]) {
   if (!Array.isArray(files) || files.length < 1 || files.length > 8)
     throw new Error("The agent must return 1–8 files");
+  const seen = new Set<string>();
   for (const file of files) {
+    const segments = typeof file.path === "string" ? file.path.split("/") : [];
     if (
       typeof file.path !== "string" ||
       typeof file.content !== "string" ||
       file.content.length > 100000 ||
-      file.path.startsWith("/") ||
-      file.path.split("/").includes("..") ||
+      file.path.includes("\\") ||
+      segments.some((segment) => !segment || segment === "." || segment === "..") ||
+      seen.has(file.path) ||
       blocked.test(file.path)
     ) {
       throw new Error("The agent returned an unsafe file path or size");
     }
+    seen.add(file.path);
   }
 }
 
@@ -126,7 +135,7 @@ export async function createPullRequest(
   const blobs = await Promise.all(
     files.map(async (file) => ({
       path: file.path,
-      mode: "100644",
+      mode: snapshot.modes[file.path] || "100644",
       type: "blob",
       sha: (
         await github<{ sha: string }>(token, `${snapshot.base}/git/blobs`, {

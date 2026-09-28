@@ -60,6 +60,7 @@ let issueCreates = 0;
 let pullCreates = 0;
 let slackCalls = 0;
 let sawDraft = false;
+let preservedMode = false;
 let planPrompt = "";
 globalThis.fetch = async (input, init = {}) => {
   const url = new URL(input);
@@ -90,7 +91,7 @@ globalThis.fetch = async (input, init = {}) => {
   if (path.endsWith("/git/ref/heads/main")) return reply({ object: { sha: "head" } });
   if (path.endsWith("/git/commits/head")) return reply({ tree: { sha: "root" } });
   if (path.endsWith("/git/trees/root"))
-    return reply({ tree: [{ path: "src/app.ts", type: "blob", size: 32 }] });
+    return reply({ tree: [{ path: "src/app.ts", type: "blob", mode: "100755", size: 32 }] });
   if (path.endsWith("/contents/src/app.ts"))
     return reply({ encoding: "base64", content: Buffer.from("export const greeting = 'Hi';").toString("base64") });
   if (path.endsWith("/issues") && method === "POST") {
@@ -98,7 +99,10 @@ globalThis.fetch = async (input, init = {}) => {
     return reply({ html_url: "https://github.com/octo/app/issues/1" }, 201);
   }
   if (path.endsWith("/git/blobs")) return reply({ sha: "blob" }, 201);
-  if (path.endsWith("/git/trees") && method === "POST") return reply({ sha: "new-tree" }, 201);
+  if (path.endsWith("/git/trees") && method === "POST") {
+    preservedMode = JSON.parse(init.body).tree[0].mode === "100755";
+    return reply({ sha: "new-tree" }, 201);
+  }
   if (path.endsWith("/git/commits") && method === "POST") return reply({ sha: "new-commit" }, 201);
   if (path.endsWith("/git/refs") && method === "POST") return reply({ ref: `refs/heads/foundry/${runId.slice(0, 12)}` }, 201);
   if (path.endsWith("/pulls") && method === "GET") return reply([]);
@@ -131,6 +135,7 @@ try {
   assert.equal(issueCreates, 1);
   assert.equal(pullCreates, 1);
   assert.equal(sawDraft, true);
+  assert.equal(preservedMode, true, "Edited files must keep their Git mode");
   assert.equal(slackCalls, 2, "Slack pagination must read both pages");
   assert.ok(planPrompt.includes("Slack asks for search"));
   assert.ok(planPrompt.includes("Slack asks for filters"));
