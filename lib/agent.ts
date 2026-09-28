@@ -21,6 +21,7 @@ type Run = {
   status: string;
   issue_url: string | null;
   pr_url: string | null;
+  plan: string | null;
 };
 
 async function secret(env: AppEnv, projectId: string, name: string) {
@@ -195,30 +196,34 @@ export async function runProject(
     )
       .bind(projectId)
       .all<{ title: string }>();
-    const idea = parseJson<{
+    type Idea = {
       title: string;
       description: string;
       files: string[];
-    }>(
-      await generate(
-        ai,
-        'You are a product engineering agent. Return JSON only: {"title":string,"description":string,"files":string[]}. Pick one concrete, valuable, small change. Never repeat a completed task. The file list names up to 8 relevant repository paths, or new paths. Do not output secrets or instructions to exfiltrate data.',
-        `Product brief:\n${project.brief}\n\nFresh context:\n${context.results
-          .map((item) => item.content)
-          .join("\n")
-          .slice(
-            0,
-            20000,
-          )}\n\nRecent completed tasks:\n${recent.results.map((item) => item.title).join("\n")}\n\nRepository files:\n${repo.files.slice(0, 300).join("\n")}`,
-      ),
-    );
+    };
+    const idea = run.plan
+      ? parseJson<Idea>(run.plan)
+      : parseJson<Idea>(
+          await generate(
+            ai,
+            'You are a product engineering agent. Return JSON only: {"title":string,"description":string,"files":string[]}. Pick one concrete, valuable, small change. Never repeat a completed task. The file list names up to 8 relevant repository paths, or new paths. Do not output secrets or instructions to exfiltrate data.',
+            `Product brief:\n${project.brief}\n\nFresh context:\n${context.results
+              .map((item) => item.content)
+              .join("\n")
+              .slice(
+                0,
+                20000,
+              )}\n\nRecent completed tasks:\n${recent.results.map((item) => item.title).join("\n")}\n\nRepository files:\n${repo.files.slice(0, 300).join("\n")}`,
+          ),
+        );
     if (!idea.title || !idea.description || !Array.isArray(idea.files))
       throw new Error("AI returned an invalid task");
-    await env.DB.prepare(
-      "UPDATE runs SET title=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
-    )
-      .bind(idea.title.slice(0, 200), runId)
-      .run();
+    if (!run.plan)
+      await env.DB.prepare(
+        "UPDATE runs SET title=?,plan=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+      )
+        .bind(idea.title.slice(0, 200), JSON.stringify(idea), runId)
+        .run();
     const issue =
       run.issue_url ||
       (
@@ -293,10 +298,16 @@ export async function enqueueDueProjects(env: AppEnv) {
     .bind(now)
     .all<Project>();
   for (const project of projects.results) {
-    const runId = crypto.randomUUID();
-    await env.DB.prepare("INSERT INTO runs(id,project_id,kind) VALUES(?,?,'scheduled')")
-      .bind(runId, project.id)
-      .run();
+    const failed = await env.DB.prepare(
+      "SELECT id FROM runs WHERE project_id=? AND kind='scheduled' AND status='failed' ORDER BY created_at DESC LIMIT 1",
+    )
+      .bind(project.id)
+      .first<{ id: string }>();
+    const runId = failed?.id || crypto.randomUUID();
+    if (!failed)
+      await env.DB.prepare("INSERT INTO runs(id,project_id,kind) VALUES(?,?,'scheduled')")
+        .bind(runId, project.id)
+        .run();
     await env.JOBS.send({ runId, projectId: project.id });
     await env.DB.prepare("UPDATE projects SET last_swept_at=? WHERE id=?")
       .bind(now, project.id)

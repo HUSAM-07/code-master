@@ -43,10 +43,15 @@ for (const name of ["security", "ai", "github", "agent"]) {
   );
 }
 const { encrypt } = await import(pathToFileURL(join(temp, "security.ts")));
-const { runProject } = await import(pathToFileURL(join(temp, "agent.ts")));
+const { runProject, enqueueDueProjects } = await import(pathToFileURL(join(temp, "agent.ts")));
 const key = readFileSync(".dev.vars", "utf8").match(/^APP_ENCRYPTION_KEY=(.+)$/m)?.[1];
 assert.ok(key);
-const env = { APP_ENCRYPTION_KEY: key, DB: { prepare } };
+const queued = [];
+const env = {
+  APP_ENCRYPTION_KEY: key,
+  DB: { prepare },
+  JOBS: { send: async (message) => { queued.push(message); } },
+};
 const id = crypto.randomUUID();
 const userId = `flow-${id}`;
 const runId = crypto.randomUUID();
@@ -67,6 +72,8 @@ globalThis.fetch = async (input, init = {}) => {
   const method = init.method || "GET";
   const reply = (value, status = 200) => Response.json(value, { status });
   if (url.hostname === "slack.com") {
+    if (url.searchParams.has("oldest"))
+      return reply({ ok: true, messages: [], response_metadata: { next_cursor: "" } });
     slackCalls++;
     return reply({
       ok: true,
@@ -75,10 +82,11 @@ globalThis.fetch = async (input, init = {}) => {
     });
   }
   if (url.hostname === "api.telegram.org")
-    return reply({ ok: true, result: [{ update_id: 7, message: { chat: { id: 123 }, text: "Telegram asks for export" } }] });
+    return reply({ ok: true, result: url.searchParams.has("offset") ? [] : [{ update_id: 7, message: { chat: { id: 123 }, text: "Telegram asks for export" } }] });
   if (url.hostname === "api.openai.com") {
     aiCalls++;
     if (aiCalls === 1) planPrompt = JSON.parse(init.body).messages[1].content;
+    if (aiCalls === 2) return reply({ error: "Temporary outage" }, 503);
     const payload = aiCalls === 1
       ? { title: "Add greeting", description: "Update the greeting", files: ["src/app.ts"] }
       : { summary: "Updated greeting", files: [{ path: "src/app.ts", content: "export const greeting = 'Hello';" }] };
@@ -123,7 +131,15 @@ try {
   await sql("INSERT INTO secrets(project_id,name,iv,ciphertext) VALUES(?,?,?,?)", [id, "TELEGRAM_BOT_TOKEN", telegramToken.iv, telegramToken.ciphertext]);
   await sql("INSERT INTO channels(id,project_id,kind,name,channel_ref) VALUES(?,?,'slack','Team','C123')", [`slack-${id}`, id]);
   await sql("INSERT INTO channels(id,project_id,kind,name,channel_ref) VALUES(?,?,'telegram','Group','123')", [`telegram-${id}`, id]);
-  await sql("INSERT INTO runs(id,project_id) VALUES(?,?)", [runId, id]);
+  await sql("INSERT INTO runs(id,project_id,kind) VALUES(?,?,'scheduled')", [runId, id]);
+  await assert.rejects(runProject(env, runId, id), /503/);
+  const [interrupted] = await sql("SELECT status,issue_url,plan FROM runs WHERE id=?", [runId]);
+  assert.equal(interrupted.status, "failed");
+  assert.equal(interrupted.issue_url, "https://github.com/octo/app/issues/1");
+  assert.equal(JSON.parse(interrupted.plan).title, "Add greeting");
+  await enqueueDueProjects(env);
+  assert.deepEqual(queued, [{ runId, projectId: id }], "The next sweep must resume its failed issue");
+  assert.equal((await sql("SELECT COUNT(*) AS n FROM runs WHERE project_id=?", [id]))[0].n, 1);
   await runProject(env, runId, id);
   const [run] = await sql("SELECT status,issue_url,pr_url FROM runs WHERE id=?", [runId]);
   assert.deepEqual(run, {
@@ -131,7 +147,7 @@ try {
     issue_url: "https://github.com/octo/app/issues/1",
     pr_url: "https://github.com/octo/app/pull/1",
   });
-  assert.equal(aiCalls, 2);
+  assert.equal(aiCalls, 3, "A retry must reuse the saved plan");
   assert.equal(issueCreates, 1);
   assert.equal(pullCreates, 1);
   assert.equal(sawDraft, true);
@@ -144,7 +160,7 @@ try {
   assert.deepEqual(cursors, [{ kind: "slack", cursor: "200.000" }, { kind: "telegram", cursor: "8" }]);
   await runProject(env, runId, id);
   assert.equal(pullCreates, 1, "Completed runs must not create duplicate PRs");
-  console.log("Agent flow passed: Slack/Telegram context → AI plan → GitHub issue → file commit → draft PR");
+  console.log("Agent flow passed: Slack/Telegram context → saved issue → scheduled retry → draft PR");
 } finally {
   globalThis.fetch = originalFetch;
   await sql("DELETE FROM projects WHERE id=?", [id]);
