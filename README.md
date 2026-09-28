@@ -10,7 +10,7 @@ Live app: https://foundry-builder.morrow-invitations.workers.dev/
 - Create a project for a repository with an initial commit. Store an OpenAI or Anthropic key in its encrypted vault (`AI_PROVIDER` and `AI_API_KEY`; optional `AI_MODEL`).
 - Add context manually or connect Slack, Telegram, or WhatsApp. Slack and Telegram are polled; WhatsApp sends signed webhooks.
 - Start a run manually. Foundry plans one focused task, creates a GitHub issue, writes complete file changes on a `foundry/` branch, and opens a draft PR. It never merges.
-- Pro accounts get scheduled runs. The free tier supports one project and three manual runs per month. Stripe Checkout and Customer Portal are ready when billing secrets and a recurring Price are configured.
+- Free accounts get one project, three manual runs per month, and one scheduled sweep per day. Pro accounts get faster scheduled runs and unlimited projects. Stripe Checkout and Customer Portal are ready when billing secrets and a recurring Price are configured.
 
 Cloudflare Queues fills the job-stream role. Kafka is not needed for this workload.
 

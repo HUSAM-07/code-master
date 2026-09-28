@@ -296,7 +296,7 @@ export async function runProject(
 export async function enqueueDueProjects(env: AppEnv) {
   const now = Math.floor(Date.now() / 1000);
   const projects = await env.DB.prepare(
-    "SELECT p.* FROM projects p JOIN users u ON u.id=p.user_id WHERE p.enabled=1 AND u.plan='pro' AND (p.last_swept_at IS NULL OR p.last_swept_at + p.interval_minutes * 60 <= ?) LIMIT 100",
+    "SELECT p.* FROM projects p JOIN users u ON u.id=p.user_id WHERE p.enabled=1 AND (p.last_swept_at IS NULL OR p.last_swept_at + (CASE WHEN u.plan='pro' THEN p.interval_minutes ELSE 1440 END) * 60 <= ?) LIMIT 100",
   )
     .bind(now)
     .all<Project>();

@@ -411,7 +411,7 @@ export default function Home() {
             <p className="mt-2 text-body-regular text-text-secondary">
               {user.plan === "pro"
                 ? "Unlimited projects and scheduled sweeps."
-                : "One project and three runs each month. Upgrade for scheduled sweeps."}
+                : "One project, three manual runs each month, and daily sweeps. Upgrade for faster sweeps."}
             </p>
             {user.plan !== "pro" ? (
               <Button className="mt-4 w-full" size="small" onClick={upgrade}>
@@ -579,16 +579,14 @@ export default function Home() {
                     <Card className="p-5">
                       <Label>AUTOMATION</Label>
                       <p className="mt-3 text-headline-medium text-text-primary">
-                        {user.plan !== "pro"
-                          ? "Manual"
-                          : detail.project.enabled
+                        {!detail.project.enabled
+                          ? "Paused"
+                          : user.plan === "pro"
                             ? `Every ${detail.project.interval_minutes}m`
-                            : "Paused"}
+                            : "Daily"}
                       </p>
                       <p className="mt-2 text-caption-1-regular text-text-secondary">
-                        {user.plan === "pro"
-                          ? "Scheduled sweep"
-                          : "Pro unlocks sweeps"}
+                        Scheduled sweep
                       </p>
                     </Card>
                   </div>
@@ -1023,6 +1021,11 @@ export default function Home() {
                         <p className="mb-3 text-body-medium text-text-primary">
                           Sweep interval
                         </p>
+                        {user.plan !== "pro" && (
+                          <p className="mb-3 text-caption-1-regular text-text-secondary">
+                            Free projects sweep daily. Pro unlocks faster intervals.
+                          </p>
+                        )}
                         <div className="flex flex-wrap gap-2">
                           {[
                             [15, "15m"],
@@ -1034,6 +1037,7 @@ export default function Home() {
                             <Button
                               key={minutes}
                               size="small"
+                              disabled={user.plan !== "pro"}
                               variant={
                                 settings.interval_minutes === minutes
                                   ? "primary"

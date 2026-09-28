@@ -113,6 +113,15 @@ try {
     status = (await run.json()).runs.find((item) => item.id === runId)?.status;
   }
   assert.equal(status, "failed", "The queue consumer must process the run");
+  const scheduled = `${base}/cdn-cgi/local/scheduled?cron=${encodeURIComponent("*/15 * * * *")}`;
+  response = await fetch(scheduled);
+  assert.equal(response.status, 200, "The cron handler must run");
+  let scheduledRuns = (await (await request(`/api/projects/${project}`, ownerSession)).json()).runs;
+  assert.equal(scheduledRuns.length, 2, "Free projects must get a daily sweep");
+  response = await fetch(scheduled);
+  assert.equal(response.status, 200);
+  scheduledRuns = (await (await request(`/api/projects/${project}`, ownerSession)).json()).runs;
+  assert.equal(scheduledRuns.length, 2, "Cron must respect the daily interval");
   response = await request(`/api/projects/${project}/context`, ownerSession, {
     method: "POST",
     headers: { Origin: "https://evil.example" },
@@ -120,7 +129,7 @@ try {
   });
   assert.equal(response.status, 403, "Cross-origin mutations must be rejected");
   console.log(
-    "Smoke check passed: tenant isolation, vault, context, queue, CSRF",
+    "Smoke check passed: tenant isolation, vault, context, queue, daily cron, CSRF",
   );
 } finally {
   await sql("DELETE FROM projects WHERE id=?", [project]);
