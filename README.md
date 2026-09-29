@@ -10,7 +10,7 @@ Live app: https://foundry-builder.morrow-invitations.workers.dev/
 - Create a project for a repository with an initial commit, choose OpenAI or Anthropic, and enter its key. Foundry encrypts the key in the project vault and queues the first run immediately. Keys can be replaced in Secrets (`AI_PROVIDER`, `AI_API_KEY`; optional `AI_MODEL`).
 - Add context manually or connect Slack, Telegram, or WhatsApp. Slack and Telegram are polled; WhatsApp sends signed webhooks.
 - Start a run manually. Foundry plans one focused task, creates a GitHub issue, writes complete file changes on a `foundry/` branch, and opens a draft PR. It never merges.
-- Free accounts get one project, three manual runs per month, and one scheduled sweep per day. Sweeps keep proposing work from the brief and repository even when no new channel message arrives. Pro accounts get faster scheduled runs and unlimited projects. Stripe Checkout and Customer Portal are ready when billing secrets and a recurring Price are configured.
+- Free accounts get one project, three manual runs per month, and one scheduled sweep per day. Sweeps keep proposing work from the brief and repository even when no new channel message arrives. Pro accounts get faster scheduled runs and unlimited projects. Dodo Payments checkout and customer portal are ready when billing credentials and a recurring product are configured.
 
 Cloudflare Queues fills the job-stream role. Kafka is not needed for this workload.
 
@@ -41,13 +41,14 @@ Set `APP_ENCRYPTION_KEY` to a persistent base64 32 byte key. Losing it makes sto
 
 ## Billing
 
-Create a recurring Stripe Price and a webhook endpoint at `/api/billing/webhook`. Subscribe to `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, and `customer.subscription.deleted`. Set these Worker secrets using `wrangler secret put`:
+Create a recurring Dodo Payments product and a webhook endpoint at `/api/billing/webhook`. Subscribe to `subscription.active`, `subscription.updated`, `subscription.renewed`, `subscription.past_due`, `subscription.on_hold`, `subscription.cancelled`, `subscription.failed`, and `subscription.expired`. Set these Worker secrets using `wrangler secret put`:
 
-- `STRIPE_SECRET_KEY`
-- `STRIPE_WEBHOOK_SECRET`
-- `STRIPE_PRICE_ID`
+- `DODO_API_KEY`
+- `DODO_WEBHOOK_KEY`
+- `DODO_PRODUCT_ID`
+- `DODO_MODE` (`test` or `live`)
 
-The UI exposes Upgrade to Pro. The billing portal API is at `/api/billing/portal`; configure Stripe's Customer Portal before using it.
+The UI exposes Upgrade to Pro. The billing portal API is at `/api/billing/portal`. A verified subscription webhook, not the checkout redirect, changes the account plan.
 
 ## Channel setup
 

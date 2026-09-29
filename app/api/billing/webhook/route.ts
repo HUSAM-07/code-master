@@ -1,90 +1,56 @@
+import { Webhook } from "standardwebhooks";
 import { appEnv } from "@/lib/env";
+import { rawBody } from "@/lib/http";
+import { jsonError } from "@/lib/security";
+
+type SubscriptionEvent = {
+  type: string;
+  timestamp: string;
+  data?: {
+    subscription_id?: string;
+    product_id?: string;
+    status?: string;
+    past_due_ends_at?: string | null;
+    customer?: { customer_id?: string };
+    metadata?: { foundry_user_id?: string };
+  };
+};
 
 export async function POST(request: Request) {
-  const secret = appEnv.STRIPE_WEBHOOK_SECRET;
-  const header = request.headers.get("stripe-signature") || "";
-  if (!secret)
+  if (!appEnv.DODO_WEBHOOK_KEY || !appEnv.DODO_PRODUCT_ID)
     return new Response("Billing is not configured", { status: 503 });
-  const parts = header.split(",").map((part) => part.trim().split("=", 2));
-  const timestamp = Number(parts.find(([key]) => key === "t")?.[1]);
-  if (
-    !Number.isFinite(timestamp) ||
-    Math.abs(Date.now() / 1000 - timestamp) > 300
-  )
-    return new Response("Invalid signature", { status: 400 });
-  const raw = await request.text();
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const signed = new Uint8Array(
-    await crypto.subtle.sign(
-      "HMAC",
-      key,
-      new TextEncoder().encode(`${timestamp}.${raw}`),
-    ),
-  );
-  const expected = Array.from(signed, (b) =>
-    b.toString(16).padStart(2, "0"),
-  ).join("");
-  const signatures = parts
-    .filter(([key, value]) => key === "v1" && /^[a-f0-9]{64}$/i.test(value || ""))
-    .map(([, value]) => value);
-  if (!signatures.some((signature) => {
-    let mismatch = 0;
-    for (let i = 0; i < expected.length; i++)
-      mismatch |= expected.charCodeAt(i) ^ signature.charCodeAt(i);
-    return mismatch === 0;
-  })) return new Response("Invalid signature", { status: 400 });
-  const event = JSON.parse(raw) as {
-    type: string;
-    data: {
-      object: {
-        client_reference_id?: string;
-        customer?: string;
-        status?: string;
-        payment_status?: string;
-      };
-    };
-  };
-  const object = event.data.object;
-  if (
-    event.type === "checkout.session.completed" &&
-    object.client_reference_id &&
-    object.customer
-  ) {
+  try {
+    const raw = await rawBody(request);
+    let event: SubscriptionEvent;
+    try {
+      event = new Webhook(appEnv.DODO_WEBHOOK_KEY).verify(raw, {
+        "webhook-id": request.headers.get("webhook-id") || "",
+        "webhook-signature": request.headers.get("webhook-signature") || "",
+        "webhook-timestamp": request.headers.get("webhook-timestamp") || "",
+      }) as SubscriptionEvent;
+    } catch {
+      return new Response("Invalid signature", { status: 400 });
+    }
+    if (!event?.type?.startsWith("subscription."))
+      return Response.json({ received: true });
+    const data = event.data;
+    const eventAt = Date.parse(event.timestamp);
+    if (!data?.subscription_id || !data.customer?.customer_id || !Number.isFinite(eventAt))
+      return new Response("Invalid subscription event", { status: 400 });
+    const userId = data.metadata?.foundry_user_id ||
+      (await appEnv.DB.prepare("SELECT id FROM users WHERE dodo_subscription_id=?")
+        .bind(data.subscription_id)
+        .first<{ id: string }>())?.id;
+    if (!userId) return Response.json({ received: true });
+    const pro = data.product_id === appEnv.DODO_PRODUCT_ID &&
+      (data.status === "active" ||
+        (data.status === "past_due" && Date.parse(data.past_due_ends_at || "") > Date.now()));
+    const plan = pro ? "pro" : "free";
     await appEnv.DB.prepare(
-      "UPDATE users SET stripe_customer_id=?,plan=CASE WHEN ? IN ('paid','no_payment_required') THEN 'pro' ELSE plan END WHERE id=?",
-    )
-      .bind(
-        object.customer,
-        object.payment_status || "",
-        object.client_reference_id,
-      )
-      .run();
+      "UPDATE users SET dodo_customer_id=?,dodo_subscription_id=?,dodo_event_at=?,plan=? WHERE id=? AND (dodo_event_at IS NULL OR dodo_event_at<=?) AND (dodo_subscription_id IS NULL OR dodo_subscription_id=? OR ?='pro')",
+    ).bind(data.customer.customer_id, data.subscription_id, eventAt, plan, userId, eventAt, data.subscription_id, plan).run();
+    return Response.json({ received: true });
+  } catch (error) {
+    return jsonError(error);
   }
-  if (
-    [
-      "customer.subscription.created",
-      "customer.subscription.deleted",
-      "customer.subscription.updated",
-    ].includes(event.type) &&
-    object.customer
-  ) {
-    await appEnv.DB.prepare(
-      "UPDATE users SET plan=? WHERE stripe_customer_id=?",
-    )
-      .bind(
-        event.type === "customer.subscription.deleted" ||
-          !["active", "trialing"].includes(object.status || "")
-          ? "free"
-          : "pro",
-        object.customer,
-      )
-      .run();
-  }
-  return Response.json({ received: true });
 }

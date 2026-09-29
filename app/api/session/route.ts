@@ -15,9 +15,10 @@ export async function GET(request: Request) {
     const user = await getUser(appEnv, request);
     return Response.json({
       billing_ready: Boolean(
-        appEnv.STRIPE_SECRET_KEY &&
-          appEnv.STRIPE_PRICE_ID &&
-          appEnv.STRIPE_WEBHOOK_SECRET,
+        appEnv.DODO_API_KEY &&
+          appEnv.DODO_PRODUCT_ID &&
+          appEnv.DODO_WEBHOOK_KEY &&
+          ["test", "live"].includes(appEnv.DODO_MODE || ""),
       ),
       user: user
         ? {

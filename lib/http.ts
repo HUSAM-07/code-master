@@ -6,7 +6,7 @@ import {
   requireUser,
 } from "./security";
 
-export async function body<T>(request: Request): Promise<T> {
+export async function rawBody(request: Request): Promise<string> {
   if (Number(request.headers.get("content-length") || 0) > 64000)
     throw new Response("Request too large", { status: 413 });
   const reader = request.body?.getReader();
@@ -26,6 +26,10 @@ export async function body<T>(request: Request): Promise<T> {
     }
     text += decoder.decode();
   }
+  return text;
+}
+export async function body<T>(request: Request): Promise<T> {
+  const text = await rawBody(request);
   try {
     return JSON.parse(text) as T;
   } catch {
