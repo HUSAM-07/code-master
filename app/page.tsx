@@ -419,7 +419,7 @@ export default function Home() {
             </p>
             {user.plan !== "pro" ? (
               <Button className="mt-4 w-full" size="small" onClick={upgrade} disabled={!billingReady}>
-                {billingReady ? "Upgrade to Pro" : "Pro billing setup pending"}
+                {billingReady ? "Upgrade to Pro · $15/month" : "Pro billing setup pending"}
               </Button>
             ) : (
               <Button

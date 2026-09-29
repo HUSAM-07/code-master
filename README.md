@@ -41,12 +41,10 @@ Set `APP_ENCRYPTION_KEY` to a persistent base64 32 byte key. Losing it makes sto
 
 ## Billing
 
-Create a recurring Dodo Payments product and a webhook endpoint at `/api/billing/webhook`. Subscribe to `subscription.active`, `subscription.updated`, `subscription.renewed`, `subscription.past_due`, `subscription.on_hold`, `subscription.cancelled`, `subscription.failed`, and `subscription.expired`. Set these Worker secrets using `wrangler secret put`:
+The live Foundry Pro product is $15 USD per month and is selected by `DODO_PRODUCT_ID` and `DODO_MODE` in `wrangler.jsonc`. The webhook endpoint is `/api/billing/webhook` and receives Dodo subscription events. Set these Worker secrets using `wrangler secret put`:
 
 - `DODO_API_KEY`
 - `DODO_WEBHOOK_KEY`
-- `DODO_PRODUCT_ID`
-- `DODO_MODE` (`test` or `live`)
 
 The UI exposes Upgrade to Pro. The billing portal API is at `/api/billing/portal`. A verified subscription webhook, not the checkout redirect, changes the account plan.
 

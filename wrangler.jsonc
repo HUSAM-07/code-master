@@ -4,6 +4,10 @@
   "main": "./worker/index.ts",
   "compatibility_date": "2026-09-28",
   "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "DODO_PRODUCT_ID": "pdt_0NoffPWTxiW27N0lGlsNQ",
+    "DODO_MODE": "live",
+  },
   "assets": { "binding": "ASSETS", "not_found_handling": "none" },
   "d1_databases": [
     {
